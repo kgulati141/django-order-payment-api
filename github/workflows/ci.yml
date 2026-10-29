@@ -48,7 +48,7 @@ jobs:
       CELERY_BROKER_URL: redis://127.0.0.1:6379/0
       CELERY_RESULT_BACKEND: redis://127.0.0.1:6379/1
       DEBUG: "False"
-      ALLOWED_HOSTS: localhost,127.0.0.1
+      ALLOWED_HOSTS: "localhost,127.0.0.1"
 
     steps:
       - name: Checkout code
@@ -69,7 +69,7 @@ jobs:
       - name: Check Django configuration
         run: python manage.py check
 
-      - name: Check database migrations
+      - name: Apply migrations
         run: python manage.py migrate --noinput
 
       - name: Run automated tests
