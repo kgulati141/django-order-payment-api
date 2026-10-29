@@ -1,0 +1,112 @@
+
+services:
+  # Redis-compatible cache
+  - type: keyvalue
+    name: django-order-payment-cache
+    region: singapore
+    plan: free
+    ipAllowList: []
+    maxmemoryPolicy: allkeys-lru
+    persistenceMode: off
+
+  # Celery queue and task results
+  - type: keyvalue
+    name: django-order-payment-queue
+    region: singapore
+    plan: free
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
+    persistenceMode: off
+
+  # Django API
+  - type: web
+    name: django-order-payment-api
+    runtime: docker
+    region: singapore
+    plan: free
+    dockerCommand: >-
+      sh -c 'python manage.py migrate --noinput &&
+      python manage.py collectstatic --noinput &&
+      exec gunicorn config.wsgi:application
+      --bind 0.0.0.0:$PORT --workers 2
+      --access-logfile - --error-logfile -'
+    healthCheckPath: /api/products/
+    autoDeployTrigger: checksPass
+    envVars:
+      - fromGroup: django-order-payment-shared
+
+      - key: DATABASE_URL
+        fromDatabase:
+          name: django-order-payment-db
+          property: connectionString
+
+      - key: REDIS_CACHE_URL
+        fromService:
+          name: django-order-payment-cache
+          type: keyvalue
+          property: connectionString
+
+      - key: CELERY_BROKER_URL
+        fromService:
+          name: django-order-payment-queue
+          type: keyvalue
+          property: connectionString
+
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          name: django-order-payment-queue
+          type: keyvalue
+          property: connectionString
+
+  # Celery background worker (paid compute)
+  - type: worker
+    name: django-order-payment-worker
+    runtime: docker
+    region: singapore
+    plan: 0.5c-512mb
+    dockerCommand: python -m celery -A config worker --loglevel=INFO
+    envVars:
+      - fromGroup: django-order-payment-shared
+
+      - key: DATABASE_URL
+        fromDatabase:
+          name: django-order-payment-db
+          property: connectionString
+
+      - key: REDIS_CACHE_URL
+        fromService:
+          name: django-order-payment-cache
+          type: keyvalue
+          property: connectionString
+
+      - key: CELERY_BROKER_URL
+        fromService:
+          name: django-order-payment-queue
+          type: keyvalue
+          property: connectionString
+
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          name: django-order-payment-queue
+          type: keyvalue
+          property: connectionString
+
+databases:
+  - name: django-order-payment-db
+    region: singapore
+    plan: free
+    postgresMajorVersion: "16"
+    databaseName: django_order_payment
+    user: django_app
+
+envVarGroups:
+  - name: django-order-payment-shared
+    envVars:
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: WEBHOOK_SECRET
+        generateValue: true
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        value: "localhost,127.0.0.1"
